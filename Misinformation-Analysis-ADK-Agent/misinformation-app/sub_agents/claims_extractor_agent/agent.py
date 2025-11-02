@@ -41,5 +41,4 @@ claims_extractor = LlmAgent(
     description="identifies and extracts clear, verifiable claims from the input article or text.",
     output_key = "extracted_claims",
     tools=[scraper_tool]
-
 )

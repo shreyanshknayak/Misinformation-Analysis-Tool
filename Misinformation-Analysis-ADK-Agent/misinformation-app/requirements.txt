@@ -8,4 +8,8 @@ deprecated
 langchain-community
 langchain_scraperapi
 fastapi
+redis
+google-cloud-firestore
+google-cloud-aiplatform
+google-cloud-vision
 

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trending Misinformation Topics</title>
+    <!-- 1. Load Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Simple keyframes for the loading spinner */
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .spinner {
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans antialiased">
+
+    <div class="container mx-auto max-w-3xl p-6">
+        
+        <header class="mb-8">
+            <h1 class="text-4xl font-bold text-white mb-2">Trending Topics</h1>
+            <p class="text-lg text-gray-400">Real-time clusters of misinformation reports.</p>
+        </header>
+
+        <!-- This is where the trend cards will be injected -->
+        <main id="trends-container">
+            <!-- Loading state -->
+            <div id="loading-spinner" class="flex flex-col items-center justify-center p-12 bg-gray-800 rounded-lg">
+                <div class="spinner w-12 h-12 border-4 border-blue-400 border-t-transparent rounded-full"></div>
+                <p class="mt-4 text-gray-300">Loading trending topics from Firestore...</p>
+            </div>
+        </main>
+        
+    </div>
+
+    <!-- 2. Load Firebase SDKs -->
+    <script type="module">
+        // Import the functions you need from the SDKs
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            collection, 
+            query, 
+            orderBy, 
+            onSnapshot 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Configuration for Frontend Team ---
+        
+        // This is your project's REAL configuration.
+        const firebaseConfigFromProject = {
+            apiKey: "AIzaSyDrsPtoPLHmRDfPQZ3xlmrwBFzXP9DXr5M",
+            authDomain: "agent-builder-472216.firebaseapp.com",
+            projectId: "agent-builder-472216",
+            storageBucket: "agent-builder-472216.firebasestorage.app",
+            messagingSenderId: "737726244243",
+            appId: "1:737726244243:web:61570da297404124113466",
+            measurementId: "G-8HHL64ZF8H"
+        };
+        
+        // --- THIS IS FIX #1 ---
+        // This variable MUST match the one used in your Cloud Function.
+        const appId = "default-app-id";
+
+        // --- End of Configuration ---
+
+        // Get references to the HTML elements
+        const trendsContainer = document.getElementById('trends-container');
+        const loadingSpinner = document.getElementById('loading-spinner');
+
+        async function setupFirebase() {
+            try {
+                // --- THIS IS FIX #2 ---
+                // We REMOVED the logic that checks for __firebase_config.
+                // This now FORCES it to use your config object from above.
+                const firebaseConfig = firebaseConfigFromProject;
+                
+                const app = initializeApp(firebaseConfig);
+                
+                // 4. Initialize Firestore with the SPECIFIC database ID
+                const db = getFirestore(app, "misinfo-reports");
+                const auth = getAuth(app);
+
+                // 5. Authenticate to get read permissions
+                // This logic is still here in case you deploy this
+                // inside a secure environment later.
+                if (typeof __initial_auth_token !== 'undefined') {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                console.log("Firebase initialized and user authenticated.");
+
+                // 6. Define the Query (This is the core logic)
+                const collectionPath = `artifacts/${appId}/public/data/trending_topics`;
+                console.log(`Listening for data at: ${collectionPath}`);
+                
+                const trendsQuery = query(
+                    collection(db, collectionPath),
+                    orderBy("topic_count", "desc") // Order by the count, highest first
+                );
+
+                // 7. Attach a real-time listener to the query
+                onSnapshot(trendsQuery, (snapshot) => {
+                    // Hide the spinner once data arrives
+                    loadingSpinner.style.display = 'none';
+                    
+                    if (snapshot.empty) {
+                        // This is expected if your function hasn't run or found clusters
+                        trendsContainer.innerHTML = `<p class="text-gray-400">No trending topics found at path: ${collectionPath}.<br><br>Have you run the 'calculate_trends' function at least once?</p>`;
+                        return;
+                    }
+
+                    // Clear old cards
+                    trendsContainer.innerHTML = '';
+
+                    // Loop through each trend document and create a card
+                    snapshot.forEach((doc) => {
+                        const trend = doc.data();
+                        
+                        // 8. Parse the report_summary JSON string (CRITICAL STEP)
+                        let firstClaimText = "Could not parse report";
+                        let verdict = "N/A";
+                        let verdictColor = "text-gray-400";
+
+                        try {
+                            const reportObject = JSON.parse(trend.report_summary);
+                            
+                            // Get the text of the first claim
+                            firstClaimText = reportObject.analyzed_claims[0]?.claim_text || "No claim text found";
+                            
+                            // Get the verdict and set its color
+                            verdict = reportObject.verdict?.final_verdict || "N/A";
+                            if (verdict.toLowerCase().includes("false") || verdict.toLowerCase().includes("misleading")) {
+                                verdictColor = "text-red-400";
+                            } else if (verdict.toLowerCase().includes("true") || verdict.toLowerCase().includes("accurate")) {
+                                verdictColor = "text-green-400";
+                            }
+                        } catch (e) {
+                            console.error("Failed to parse report_summary:", e, trend.report_summary);
+                        }
+
+                        // 9. Create and append the HTML card
+                        const card = document.createElement('div');
+                        card.className = "bg-gray-800 p-6 rounded-lg shadow-md mb-4 transition-transform hover:scale-[1.02]";
+                        card.innerHTML = `
+                            <div class="flex justify-between items-start mb-3">
+                                <span class="text-sm font-medium ${verdictColor} uppercase tracking-wider">${verdict}</span>
+                                <div class="text-right">
+                                    <span class="text-xl font-bold text-blue-400">${trend.topic_count}</span>
+                                    <span class="text-sm text-gray-400"> reports</span>
+                                </div>
+                            </div>
+                            <h2 class="text-xl font-semibold text-white mb-4">${firstClaimText}</h2>
+                            <code class="text-xs text-gray-500">Example Hash: ${trend.example_hash}</code>
+                            
+                            <!-- Bonus: Toggle to see the raw JSON data -->
+                            <details class="mt-4">
+                                <summary class="text-sm text-blue-400 cursor-pointer">Show Raw Data</summary>
+                                <pre class="mt-2 p-3 bg-gray-900 rounded-md text-xs text-gray-300 overflow-auto">${JSON.stringify(JSON.parse(trend.report_summary), null, 2)}</pre>
+                            </details>
+                        `;
+                        trendsContainer.appendChild(card);
+                    });
+
+                }, (error) => {
+                    // Handle query errors
+                    console.error("Error listening to trends:", error);
+                    loadingSpinner.style.display = 'none';
+                    trendsContainer.innerHTML = `<p class="text-red-400">Error loading trends: ${error.message}</p>`;
+                });
+
+            } catch (error) {
+                console.error("Firebase setup failed:", error);
+                loadingSpinner.style.display = 'none';
+                // This typo was also in your original, fixing it
+                trendsContainer.innerHTML = `<p class="text-red-400">Error connecting to database: ${error.message}</p>`;
+            }
+        }
+
+        // Run the setup function
+        setupFirebase();
+
+    </script>
+</body>
+</html>
+

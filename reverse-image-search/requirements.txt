@@ -1,0 +1,17 @@
+# For Google Cloud Services
+google-cloud-vision
+google-cloud-storage
+
+# For web scraping and parsing
+requests
+beautifulsoup4
+python-dateutil
+tldextract
+python-multipart
+
+# For the web application
+fastapi
+uvicorn[standard]
+
+#vertexai integration
+google-cloud-aiplatform  
